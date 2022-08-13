@@ -11,13 +11,14 @@ exports.createProduct = asyncErrorHandler(async (req, res, next) => {
 
 // get all products
 exports.getAllProducts = asyncErrorHandler(async (req, res, next) => {
+  const productCount = await Product.countDocuments();
   const resultPerPage = 5;
   const apiFeatures = new ApiFeatures(Product.find(), req.query)
     .search()
     .filter()
     .pagination(resultPerPage);
   const products = await apiFeatures.query;
-  res.status(200).json({ success: true, products });
+  res.status(200).json({ success: true, count: productCount, products });
 });
 
 //update product - admin
