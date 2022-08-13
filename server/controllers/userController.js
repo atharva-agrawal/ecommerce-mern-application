@@ -103,31 +103,158 @@ exports.logoutUser = catchAsyncErrors(async (req, res, next) => {
       .createHash("sha256")
       .update(req.params.token)
       .digest("hex");
+
+    const user = await User.findOne({
+      resetPasswordToken,
+      resetPasswordExpire: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return next(
+        new ErrorHandler(
+          "Reset password token is invalid or has been expired",
+          400
+        )
+      );
+    }
+
+    if (req.body.password !== req.body.confirmPassword) {
+      return next(new ErrorHandler("Password doesn't match", 400));
+    }
+
+    user.password = req.body.password;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpire = undefined;
+
+    await user.save();
+
+    sendToken(user, 200, res);
   });
 
-  const user = await User.findOne({
-    resetPasswordToken,
-    resetPasswordExpire: { $gt: Date.now() },
+  //get user details
+  exports.getUserDetails = catchAsyncErrors(async (req, res, next) => {
+    const user = await User.findById(req.user.id);
+
+    if (!user) {
+      next(new ErrorHandler("User not found", 404));
+    }
+
+    res.status(200).json({
+      success: true,
+      user,
+    });
   });
 
-  if (!user) {
-    return next(
-      new ErrorHandler(
-        "Reset password token is invalid or has been expired",
-        400
-      )
-    );
-  }
+  //update password
+  exports.updatePassword = catchAsyncErrors(async (req, res, next) => {
+    const user = await User.findById(req.user.id).select("+password");
 
-  if (req.body.password !== req.body.confirmPassword) {
-    return next(new ErrorHandler("Password doesn't match", 400));
-  }
+    if (!user) {
+      return next(new ErrorHandler("User not found", 404));
+    }
 
-  user.password = req.body.password;
-  user.resetPasswordToken = undefined;
-  user.resetPasswordExpire = undefined;
+    const isPasswordMatched = user.comparePassword(req.body.oldPassword);
 
-  await user.save();
+    if (!isPasswordMatched) {
+      return next(new ErrorHandler("Old password is incorrect", 400));
+    }
 
-  sendToken(user, 200, res);
+    if (req.body.newPassword !== req.body.confirmPassword) {
+      return next(new ErrorHandler("Password doesn't match", 400));
+    }
+
+    user.password = req.body.newPassword;
+
+    await user.save();
+
+    sendToken(user, 200, res);
+  });
+
+  //update user profile
+  exports.updateUserProfile = catchAsyncErrors(async (req, res, next) => {
+    const newUser = {
+      name: req.body.name,
+      email: req.body.email,
+    };
+    //add cloudinary for avatar
+
+    const user = await User.findByIdAndUpdate(req.user.id, newUser, {
+      new: true,
+      runValidators: true,
+      userFindAndModify: false,
+    });
+
+    res.status(200).json({
+      success: true,
+      user,
+    });
+  });
+
+  //get all users (admin)
+  exports.getAllUsers = catchAsyncErrors(async (req, res, next) => {
+    const users = await User.find();
+
+    if (!users) {
+      return next(new ErrorHandler("No Record Found", 400));
+    }
+
+    res.status(200).json({
+      success: true,
+      users,
+    });
+  });
+
+  //get single users (admin)
+  exports.getSingleUser = catchAsyncErrors(async (req, res, next) => {
+    const user = User.findById(req.params.id);
+
+    if (!user) {
+      return next(
+        new ErrorHandler(`User doesn't exist with id ${req.params.id}`)
+      );
+    }
+
+    res.status(200).json({
+      success: true,
+      user,
+    });
+  });
+
+  //update user role - admin
+  exports.updateUserRole = catchAsyncErrors(async (req, res, next) => {
+    const newUser = {
+      name: req.body.name,
+      email: req.body.email,
+      role: req.body.role,
+    };
+
+    const user = await User.findByIdAndUpdate(req.user.id, newUser, {
+      new: true,
+      runValidators: true,
+      userFindAndModify: false,
+    });
+
+    res.status(200).json({
+      success: true,
+      user,
+    });
+  });
+
+  //delete user - admin
+  exports.deleteUser = catchAsyncErrors(async (req, res, next) => {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return next(
+        new ErrorHandler(`User with id ${req.params.id} doesn't exist`)
+      );
+    }
+
+    await user.remove();
+
+    res.status(200).json({
+      success: true,
+      message: "User deleted successfully",
+    });
+  });
 });
